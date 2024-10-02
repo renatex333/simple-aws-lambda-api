@@ -50,6 +50,7 @@ def create_function(
     Returns:
     - The ARN of the new Lambda function
     """
+    load_dotenv()
     lambda_client = boto3.client(
         "lambda",
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
@@ -99,6 +100,7 @@ def create_api(api_gateway_name: str, update: bool):
     - api_gateway_name: Name of the API Gateway
     - update: Whether to update an existing API Gateway
     """
+    load_dotenv()
     api_gateway_client = boto3.client(
         "apigatewayv2",
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
@@ -112,7 +114,7 @@ def create_api(api_gateway_name: str, update: bool):
             api_gateway_client.delete_api(ApiId=api_gateway_id)
             print("API Gateway Deleted!")
             unset_key(".env", "API_GATEWAY_ID")
-        except (api_gateway_client.exceptions.ResourceNotFoundException, botocore.exceptions.ParamValidationError):
+        except (api_gateway_client.exceptions.NotFoundException, botocore.exceptions.ParamValidationError):
             print(f"No existing API Gateway found with ID {api_gateway_id}.")
 
     lambda_function_arn = os.getenv("FUNCTION_ARN")
@@ -132,12 +134,13 @@ def create_api(api_gateway_name: str, update: bool):
     set_key(".env", "API_GATEWAY_URL", api_gateway_endpoint)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 3:
         print("Usage: python main.py <path to zip file> <handler> [update]")
         sys.exit(1)
     ZIP_FILE = sys.argv[1]
     HANDLER = ZIP_FILE.split("/")[-1].replace(".zip", f".{sys.argv[2]}")
-    if len(sys.argv) == 3 and sys.argv[-1] == "update":
+    if len(sys.argv) == 4 and sys.argv[-1] == "update":
+        print("Updating existing resources...")
         main(zip_file_path=ZIP_FILE, handler=HANDLER, update=True)
     else:
         main(zip_file_path=ZIP_FILE, handler=HANDLER)
