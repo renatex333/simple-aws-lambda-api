@@ -1,5 +1,10 @@
 """
-Script to create a simple API using AWS Lambda and API Gateway
+Script to:
+
+- Create a new Lambda function from a ZIP file
+- Create a new API Gateway to expose the Lambda function
+
+Author: Renatex
 """
 
 import os
@@ -7,25 +12,43 @@ import sys
 import boto3
 import random
 import string
-from dotenv import load_dotenv, set_key
+import botocore
+from dotenv import load_dotenv, set_key, unset_key
 
-def main(update=False):
+def main(zip_file_path: str, handler: str, update: bool = False):
+    """
+    Create a new Lambda function and API Gateway
+
+    Args:
+    - zip_file_path: Path to the ZIP file containing the Lambda function code
+    - handler: Handler function for the Lambda function
+    - update: Whether to update an existing Lambda function
+    """
     load_dotenv()
 
-    lambda_function_name = "word_count_renatex"
-    api_gateway_name = "api_word_count_renatex"
+    lambda_function_name = os.getenv("FUNCTION_NAME")
+    api_gateway_name = os.getenv("API_GATEWAY_NAME")
 
-    data_dir = os.path.relpath("data", os.getcwd())
-    zip_file = "my_lambda.zip"
-    handler = "my_lambda.word_count" # Python file DOT handler function
-    zip_file_path = os.path.join(data_dir, zip_file)
-    lambda_function_arn = create_function(lambda_function_name, zip_file_path, handler, update)
-    create_api(api_gateway_name, lambda_function_arn, update)
-    
+    create_function(lambda_function_name, zip_file_path, handler, update)
+    create_api(api_gateway_name, update)
 
-def create_function(lambda_function_name, zip_file_path, handler, update) -> str:
+def create_function(
+        lambda_function_name: str,
+        zip_file_path: str,
+        handler: str,
+        update: bool
+    ) -> str:
     """
     Create a new Lambda function using the provided ZIP file
+
+    Args:
+    - lambda_function_name: Name of the Lambda function
+    - zip_file_path: Path to the ZIP file containing the Lambda function code
+    - handler: Handler function for the Lambda function
+    - update: Whether to update an existing Lambda function
+
+    Returns:
+    - The ARN of the new Lambda function
     """
     lambda_client = boto3.client(
         "lambda",
@@ -43,36 +66,38 @@ def create_function(lambda_function_name, zip_file_path, handler, update) -> str
     if update:
         try:
             lambda_client.delete_function(FunctionName=lambda_function_name)
-            print("Function Deleted!")
-        except Exception as e:
-            print("Error deleting function:", e)
-    lambda_response = lambda_client.create_function(
+            print("Existing Function was Deleted!")
+            unset_key(".env", "FUNCTION_ARN")
+        except (lambda_client.exceptions.ResourceNotFoundException, botocore.exceptions.ParamValidationError):
+            print("No existing function found.")
+
+    response = lambda_client.create_function(
         FunctionName=lambda_function_name,
         Runtime="python3.9",
         Role=lambda_role_arn,
         Handler=handler,
         Code={"ZipFile": zip_to_deploy},
     )
-
+    function_arn = response["FunctionArn"]
     id_num = "".join(random.choices(string.digits, k=7))
-    api_gateway_permissions = lambda_client.add_permission(
+    add_permission_response = lambda_client.add_permission(
         FunctionName=lambda_function_name,
         StatementId="api-gateway-permission-statement-" + id_num,
         Action="lambda:InvokeFunction",
         Principal="apigateway.amazonaws.com",
     )
 
-    try:
-        print("Function Created!")
-        print("Function ARN:", lambda_response["FunctionArn"])
-    except KeyError as e:
-        raise Exception("Error creating function:", e)
-    
-    return lambda_response["FunctionArn"]
-    
-def create_api(api_gateway_name, lambda_function_arn, update):
+    print("Function Created!")
+    print(f"Function {lambda_function_name} created with ARN:", function_arn)
+    set_key(".env", "\nFUNCTION_ARN", function_arn)
+
+def create_api(api_gateway_name: str, update: bool):
     """
     Create a new API Gateway with a route to the provided Lambda function
+
+    Args:
+    - api_gateway_name: Name of the API Gateway
+    - update: Whether to update an existing API Gateway
     """
     api_gateway_client = boto3.client(
         "apigatewayv2",
@@ -82,13 +107,17 @@ def create_api(api_gateway_name, lambda_function_arn, update):
     )
 
     if update:
+        api_gateway_id = os.getenv("API_GATEWAY_ID")
         try:
-            api_gateway_client.delete_api(ApiId=os.getenv("API_GATEWAY_ID"))
+            api_gateway_client.delete_api(ApiId=api_gateway_id)
             print("API Gateway Deleted!")
-        except Exception as e:
-            print("Error deleting API Gateway:", e)
+            unset_key(".env", "API_GATEWAY_ID")
+        except (api_gateway_client.exceptions.ResourceNotFoundException, botocore.exceptions.ParamValidationError):
+            print(f"No existing API Gateway found with ID {api_gateway_id}.")
+
+    lambda_function_arn = os.getenv("FUNCTION_ARN")
     api_route = "/word-count"
-    api_gateway_create = api_gateway_client.create_api(
+    response = api_gateway_client.create_api(
         Name=api_gateway_name,
         ProtocolType="HTTP",
         Version="1.0",
@@ -96,16 +125,19 @@ def create_api(api_gateway_name, lambda_function_arn, update):
         Target=lambda_function_arn,
     )
 
-    try:
-        print("API Gateway Created!")
-        print("API Endpoint:", api_gateway_create["ApiEndpoint"] + api_route)
-        set_key(".env", "API_GATEWAY_ID", api_gateway_create["ApiId"])
-        set_key(".env", "API_GATEWAY_URL", api_gateway_create["ApiEndpoint"] + api_route)
-    except KeyError as e:
-        raise Exception("Error creating API Gateway:", e)
+    api_gateway_id = response["ApiId"]
+    api_gateway_endpoint = response["ApiEndpoint"] + api_route
+    print("API Gateway Created at:", api_gateway_endpoint, "with ID:", api_gateway_id)
+    set_key(".env", "API_GATEWAY_ID", api_gateway_id)
+    set_key(".env", "API_GATEWAY_URL", api_gateway_endpoint)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "update":
-        main(update=True)
+    if len(sys.argv) < 2:
+        print("Usage: python main.py <path to zip file> <handler> [update]")
+        sys.exit(1)
+    ZIP_FILE = sys.argv[1]
+    HANDLER = ZIP_FILE.split("/")[-1].replace(".zip", f".{sys.argv[2]}")
+    if len(sys.argv) == 3 and sys.argv[-1] == "update":
+        main(zip_file_path=ZIP_FILE, handler=HANDLER, update=True)
     else:
-        main()
+        main(zip_file_path=ZIP_FILE, handler=HANDLER)
