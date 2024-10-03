@@ -48,13 +48,17 @@ python3 src/main.py <path_to_zip_file> <handler_function> update
 
 This command will delete the existing resources and redeploy them with the updated configuration.
 
+Here’s an improved version of your README section for clarity and professionalism:
+
 ### 4. Testing the Deployment
 
-Once the Lambda function and API Gateway are deployed, you can verify that everything is working by running:
+After deploying the Lambda function and API Gateway, you can verify that the setup is functioning correctly by running the following command:
 
 ```bash
-pytest
+pytest --local
 ```
+
+The `--local` flag ensures that tests requiring local resources, such as environment variables, are executed.
 
 ## References
 
