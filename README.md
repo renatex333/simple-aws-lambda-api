@@ -53,13 +53,7 @@ This command will delete the existing resources and redeploy them with the updat
 Once the Lambda function and API Gateway are deployed, you can verify that everything is working by running:
 
 ```bash
-python3 tests/test.py
-```
-
-You can enable verbose mode for more detailed output:
-
-```bash
-python3 tests/test.py -v
+pytest
 ```
 
 ## References
@@ -67,3 +61,4 @@ python3 tests/test.py -v
 - [AWS Boto3 Documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 - [AWS Lambda Documentation](https://docs.aws.amazon.com/lambda/)
 - [API Gateway Documentation](https://docs.aws.amazon.com/apigateway/)
+- [Pytest Documentation](https://docs.pytest.org/en/stable/)

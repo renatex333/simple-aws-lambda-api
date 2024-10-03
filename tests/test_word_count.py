@@ -1,15 +1,32 @@
-import os
-import io
 import sys
 import json
+import pytest
+import my_lambda
 import boto3
+import os
 import requests
+import io
 from dotenv import load_dotenv
 
-def test_function(verbose: bool = False):
+
+
+def test_simple_text_count():
+    """Tests the word count of a simple text."""
+    event = {"body": json.dumps({"0": "Hello World"})}
+    expected = {
+        "created_by": "Renatex",
+        "message": "Word count lambda function",
+        "word_count": {"0": 2},
+    }
+
+    # Test if return is as expected
+    assert my_lambda.word_count(event, None) == expected
+
+def test_function(verbose: bool = True):
     """
     Test the Lambda function by asserting its existence and expected output.
     """
+    load_dotenv()
     # Create a Boto3 client for AWS Lambda
     lambda_client = boto3.client(
         "lambda",
@@ -20,6 +37,29 @@ def test_function(verbose: bool = False):
 
     function_name = os.getenv("FUNCTION_NAME")
 
+    def function_exists(lambda_client, function_name) -> bool:
+        """
+        Check if the function exists. Return True if it does, False otherwise.
+        """
+        try:
+            lambda_client.get_function(FunctionName=function_name)
+            return True
+        except lambda_client.exceptions.ResourceNotFoundException:
+            return False
+
+    def function_invoke(lambda_client, function_name) -> dict:
+        """
+        Invoke the function. Return the response payload decoded as a string.
+        """
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="RequestResponse",
+        )
+
+        payload = response["Payload"]
+
+        return io.BytesIO(payload.read()).read().decode("utf-8")
+
     assert function_exists(lambda_client, function_name) is True, f"Function {function_name} does not exist"
 
     response = function_invoke(lambda_client, function_name)
@@ -29,33 +69,11 @@ def test_function(verbose: bool = False):
         print("Response:", response)
     assert response["message"] == "No body in the request", "Function did not return the expected message"
 
-def function_exists(lambda_client, function_name) -> bool:
-    """
-    Check if the function exists. Return True if it does, False otherwise.
-    """
-    try:
-        lambda_client.get_function(FunctionName=function_name)
-        return True
-    except lambda_client.exceptions.ResourceNotFoundException:
-        return False
-
-def function_invoke(lambda_client, function_name) -> dict:
-    """
-    Invoke the function. Return the response payload decoded as a string.
-    """
-    response = lambda_client.invoke(
-        FunctionName=function_name,
-        InvocationType="RequestResponse",
-    )
-
-    payload = response["Payload"]
-
-    return io.BytesIO(payload.read()).read().decode("utf-8")
-
-def test_api(verbose: bool = False):
+def test_api(verbose: bool = True):
     """
     Test the API Gateway by sending a POST request and asserting the response.
     """
+    load_dotenv()
     url = os.getenv("API_GATEWAY_URL")
     payload = {
         "0": "Hello World!",
@@ -78,10 +96,3 @@ def test_api(verbose: bool = False):
     for key, value in payload.items():
         assert key in response["word_count"], f"Key {key} not found in response"
         assert response["word_count"][key] == len(value.split()), f"Word count for key {key} is not correct. Expected {len(value.split())}, got {response['word_count'][key]}"
-
-if __name__ == "__main__":
-    load_dotenv()
-
-    if sys.argv[-1] == "-v":
-        test_function(verbose=True)
-        test_api(verbose=True)
